@@ -1,0 +1,141 @@
+# Data and Variables
+
+```{r prepare}
+lr  <- function(x) 100 * (log(x) - log(lag(x)))   # monthly log return, in %
+yoy <- function(x) 100 * (x / lag(x, 12) - 1)      # year-on-year % change
+
+df <- raw %>%
+  transmute(Date,
+            WTI    = lr(WTI),
+            SP500  = lr(SP500),
+            USD    = lr(USD_Index),
+            VIX,
+            dVIX   = VIX - lag(VIX),
+            Gold   = lr(Gold),
+            d10Y   = US_10Y_Yield - lag(US_10Y_Yield),
+            PH_CPI = yoy(PH_CPI_Index),
+            USDPHP = lr(USD_PHP),
+            PH_Mfg = yoy(PH_VoPI)) %>%
+  filter(between(Date, case_start, case_end))
+
+write_csv(df, "data/analysis_dataset.csv")
+
+y_var  <- "WTI"
+x_brief  <- c("SP500", "USD", "VIX", "Gold", "d10Y", "PH_CPI", "USDPHP", "PH_Mfg")
+x_global <- c("SP500", "USD", "VIX", "Gold", "d10Y")
+x_ph     <- c("PH_CPI", "USDPHP", "PH_Mfg")
+```
+
+## Dataset and unit of observation
+
+The unit of observation is one **calendar month**. The sample runs from January 2018 to December 2025, giving $T =$ `r nrow(df)` monthly observations. Data for 2016–2017 is downloaded only so that the January 2018 returns and year-on-year rates can be computed. Every series is downloaded by the R workflow (`0_data_collection_and_library.Rmd`) and cached in `data/raw_monthly.csv`. The final analysis dataset is saved as `data/analysis_dataset.csv`.
+
+```{r variable-dictionary}
+tribble(
+  ~Variable, ~Code, ~Construction, ~Source, ~`Expected sign`,
+  "WTI crude oil log return (dependent)", "WTI", "100 x log change of month-end spot", "FRED DCOILWTICO (EIA)", "",
+  "S&P 500 return", "SP500", "100 x log change of month-end level", "FRED SP500", "+",
+  "USD index return", "USD", "100 x log change of month-end level", "FRED DTWEXBGS", "-",
+  "VIX", "VIX", "Monthly average of daily close", "FRED VIXCLS", "-",
+  "Gold return", "Gold", "100 x log change of month-end price", "COMEX gold futures (Yahoo GC=F)", "+/-",
+  "US 10Y yield change", "d10Y", "First difference of month-end yield (pp)", "FRED DGS10", "+",
+  "PH CPI inflation", "PH_CPI", "YoY % change, headline CPI (2018=100)", "PSA OpenSTAT", "+/0",
+  "USD/PHP change", "USDPHP", "100 x log change of month-end rate", "Yahoo PHP=X", "+/0",
+  "PH manufacturing growth", "PH_Mfg", "YoY % change, MISSI VoPI (2018=100)", "PSA OpenSTAT (MISSI)", "+/0"
+) %>%
+  tbl("Variable definitions, transformations and sources") %>%
+  column_spec(3, width = "5cm") %>% column_spec(4, width = "3.5cm")
+```
+
+**Dependent variable.** The dependent variable is the monthly log return on West Texas Intermediate crude oil, $r_t = 100\,[\ln P_t - \ln P_{t-1}]$. $P_t$ is the last available daily EIA spot price in month $t$. Using month-end prices follows the case brief, and it also avoids the single negative daily print of 20 April 2020 (–\$37.63/bbl), at which a logarithm is undefined. The April 2020 month-end price was positive.
+
+**Explanatory variables.** The regressors follow the case brief and fall into two blocks:
+
+* *Global financial conditions:* equity returns, the trade-weighted dollar, implied volatility, gold and US long-term yields. Oil is priced in dollars and traded globally, so these are the conditions the literature associates with oil prices (Kilian, 2009; Akram, 2009).
+* *Philippine conditions:* inflation, the peso and manufacturing activity. The Philippines is a small, open, net oil-importing economy and a price-taker in world oil markets. These variables are therefore expected to *respond to* oil rather than drive it. Testing that expectation formally is one of the aims of the case.
+
+## Data-quality checks
+
+```{r quality}
+quality <- tibble(
+  Variable  = lab(c(y_var, x_brief)),
+  Type      = map_chr(df[c(y_var, x_brief)], class),
+  Missing   = map_int(df[c(y_var, x_brief)], ~ sum(is.na(.x))),
+  `Non-finite` = map_int(df[c(y_var, x_brief)], ~ sum(!is.finite(.x)))
+)
+tbl(quality, "Data types and missing observations, January 2018 – December 2025")
+```
+
+All series are numeric, and there are no missing or non-finite values in the estimation sample. Weekend and holiday gaps in the daily series are skipped when month-end values are taken, so they cause no missing data. Two data-quality issues still need attention:
+
+1. **Source substitutions.** The brief points to the World Gold Council for gold and to the BSP for USD/PHP. Neither offers a scriptable download, so COMEX front-month gold futures and Yahoo's USD/PHP close are used instead. Both track the official series closely at month-end, and the substitution keeps the workflow fully reproducible.
+2. **Base effects in Philippine manufacturing.** The PSA Volume of Production Index fell to about 14–17% of its 2018 level during the 2020 lockdowns. Year-on-year growth therefore ranges from `r fmt(min(df$PH_Mfg), 1)`% to `r fmt(max(df$PH_Mfg), 1)`%, because 2021 is measured against a collapsed 2020 base. The published series also shows a large drop in July 2019. These values are PSA's official figures and are kept as the brief specifies. The diagnostics check whether they distort the regression.
+
+## Descriptive statistics
+
+```{r descriptives}
+skew <- function(x) mean((x - mean(x))^3) / sd(x)^3
+kurt <- function(x) mean((x - mean(x))^4) / sd(x)^4
+
+desc <- df %>%
+  select(all_of(c(y_var, x_brief))) %>%
+  pivot_longer(everything(), names_to = "Variable") %>%
+  mutate(Variable = factor(lab(Variable), lab(c(y_var, x_brief)))) %>%
+  group_by(Variable) %>%
+  summarise(Mean = mean(value), SD = sd(value), Min = min(value),
+            Median = median(value), Max = max(value),
+            Skewness = skew(value), Kurtosis = kurt(value),
+            `AR(1)` = cor(value[-1], value[-n()]))
+tbl(desc, "Descriptive statistics (monthly, \\% or percentage points)", digits = 2)
+```
+
+Average WTI returns are close to zero (`r fmt(mean(df$WTI))`% a month), but the series is very volatile (SD `r fmt(sd(df$WTI))`%). It is also strongly non-normal, with a kurtosis of `r fmt(kurt(df$WTI), 1)` against 3 for a normal distribution. This is driven by March 2020 (`r fmt(df$WTI[df$Date == "2020-03-01"], 1)`%) and May 2020 (`r fmt(df$WTI[df$Date == "2020-05-01"], 1)`%). The return series show little first-order persistence. VIX (AR(1) = `r fmt(desc[["AR(1)"]][desc$Variable == lab("VIX")])`) and PH inflation (`r fmt(desc[["AR(1)"]][desc$Variable == lab("PH_CPI")])`) are persistent levels, as expected for a volatility index and a year-on-year rate. PH manufacturing growth has the extreme range described above.
+
+```{r fig-wti, fig.cap = "WTI month-end price and monthly log return, 2018–2025", fig.height = 3.6}
+raw %>%
+  filter(between(Date, case_start, case_end)) %>%
+  select(Date, `Price (USD/bbl)` = WTI) %>%
+  left_join(select(df, Date, `Log return (%)` = WTI), by = "Date") %>%
+  pivot_longer(-Date) %>%
+  ggplot(aes(Date, value)) +
+  geom_line(colour = "grey20") +
+  geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.3) +
+  facet_wrap(~name, scales = "free_y", ncol = 2) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 10)
+```
+
+```{r fig-regressors, fig.cap = "Explanatory variables as used in the regression", fig.height = 5}
+df %>%
+  select(Date, all_of(x_brief)) %>%
+  pivot_longer(-Date) %>%
+  mutate(name = factor(lab(name), lab(x_brief))) %>%
+  ggplot(aes(Date, value)) +
+  geom_line(colour = "steelblue4", linewidth = 0.4) +
+  facet_wrap(~name, scales = "free_y", ncol = 3) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 9)
+```
+
+```{r fig-scatter, fig.cap = "WTI return against each candidate regressor (OLS line; March and May 2020 in red)", fig.height = 5}
+df %>%
+  select(Date, WTI, all_of(x_brief)) %>%
+  pivot_longer(all_of(x_brief)) %>%
+  mutate(name = factor(lab(name), lab(x_brief)),
+         covid = Date %in% as.Date(c("2020-03-01", "2020-05-01"))) %>%
+  ggplot(aes(value, WTI)) +
+  geom_point(aes(colour = covid), size = 1, show.legend = FALSE) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "grey30", linewidth = 0.5) +
+  scale_colour_manual(values = c("grey50", "red")) +
+  facet_wrap(~name, scales = "free_x", ncol = 3) +
+  labs(x = NULL, y = "WTI return (%)") +
+  theme_minimal(base_size = 9)
+```
+
+Figure 1 shows the 2020 collapse and rebound, the 2022 spike after Russia's invasion of Ukraine, and a gradual decline from 2023. Figures 2 and 3 show the main patterns. WTI tends to rise with equities and US yields and to fall when the dollar strengthens or volatility rises. No clear relationship appears with any Philippine variable. The two 2020 outliers (red) sit far from every other point and could pull the fitted lines on their own.
+
+## Transformations and exclusions
+
+* **Log returns** for prices and indices (WTI, S&P 500, USD index, gold, USD/PHP) make the series approximately stationary and comparable in percentage terms. **First differences** are used for the 10-year yield because it is already in percent. **Levels** are used for VIX, and **YoY rates** for PH CPI and manufacturing, as the brief specifies.
+* **No observations are excluded.** The extreme months of 2020 are real market outcomes. They are kept in the sample and dealt with explicitly in Sections 6–8.
+* The **change in VIX** (`dVIX`) is constructed as a possible alternative to the VIX level and is assessed in Section 5.

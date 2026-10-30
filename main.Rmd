@@ -1,0 +1,55 @@
+---
+title: "What Moves Oil? Financial and Economic Conditions Behind Monthly WTI Returns, 2018–2025"
+subtitle: "FINARTS C01 | Group Case 1: Comprehensive Financial Regression Analysis"
+author: "Group members: Roan Campo, Trisha Mendoza, Joanna Rentoria, Joshua Young"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    fig_caption: true
+geometry: margin=2.2cm
+fontsize: 11pt
+header-includes:
+  - \usepackage{float}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+                      fig.pos = "H", fig.width = 7, out.width = "95%")
+options(knitr.duplicate.label = "allow", knitr.kable.NA = "")
+
+# Report sections, knitted in order below. They are also run once here, silently,
+# so that the Executive Summary can quote the final results.
+sections <- list.files(pattern = "^[0-8]_.*\\.Rmd$")
+invisible(lapply(sections, knitr::knit_child, quiet = TRUE))
+```
+
+
+# Executive Summary {-}
+
+**Problem.** Philippine firms that buy fuel, such as distributors, airlines, power producers and transport operators, are exposed to swings in world crude oil prices that they cannot control. To manage that exposure they need to know which financial and economic conditions move with oil. This report asks: *over January 2018 – December 2025, which global financial conditions and which Philippine macro-financial conditions are associated with monthly WTI crude oil log returns, and how strongly?*
+
+**Approach.** We regress `r nobs(m1)` monthly WTI log returns on the eight candidate regressors in the case brief: S&P 500 returns, the US dollar index, VIX, gold, US 10-year yield changes, Philippine CPI inflation, USD/PHP and Philippine manufacturing growth. We then test the results, compare specifications, run diagnostics, correct the problems found, and check the final model with robust MM-regression.
+
+**Key findings.**
+
+* Oil returns are tied to **global** conditions. In the final model, a 10 bp rise in the US 10-year yield goes with a `r fmt(b4["d10Y"] / 10, 2)` pp higher monthly WTI return, a 1% S&P 500 gain with `r fmt(b4["SP500"], 2)` pp, and a 1% stronger dollar with `r fmt(abs(b4["USD"]), 2)` pp *lower* (HAC p-values `r pfmt(p4["d10Y"])`, `r pfmt(p4["SP500"])` and `r pfmt(p4["USD"])`).
+* **Philippine conditions add no explanatory power** (joint F-test p `r pv(jp["ph"])`). The peso's apparent link to oil reflects oil weakening the peso, not the reverse.
+* The initial model was distorted by **March and May 2020** (`r fmt(df$WTI[excl][1], 0)`% and +`r fmt(df$WTI[excl][2], 0)`%). Event dummies with Newey-West standard errors fix every diagnostic failure. A robust MM-estimator independently gives those same two months zero weight and reproduces the final coefficients.
+
+**Recommendation.** Philippine oil users should base oil-risk monitoring and hedging on **global indicators** (US yields, equities and the dollar) rather than domestic data. Because oil increases tend to coincide with a weaker peso, they should **hedge oil and USD/PHP together**. They should also protect against **tail events** with options and stress tests, since the largest moves were not explained by any financial variable.
+
+# Introduction
+
+**Decision context.** The Philippines imports nearly all of its crude oil and refined fuel. For a domestic fuel buyer, a rise in world oil prices raises costs directly, and through the exchange rate it also weakens the peso in which those costs are paid. Treasury and risk committees must decide what to monitor and how to hedge. That decision depends on whether oil price movements are linked to observable financial conditions, and whether those conditions are global or domestic.
+
+**Empirical research question.** The general question in the brief, "which financial and economic conditions are associated with WTI monthly log returns?", is refined into two testable questions:
+
+1. Which **global** financial conditions (equity returns, the dollar, volatility, gold and US long-term yields) are significantly associated with contemporaneous monthly WTI log returns, and how large are those associations economically?
+2. Once global conditions are controlled for, do **Philippine** conditions (inflation, the peso and manufacturing growth) add any explanatory power? A small, price-taking oil importer should find that they do not.
+
+**Structure.** Section 2 describes the data. Sections 3–5 estimate, test and compare the initial specifications. Section 6 presents the diagnostics, Section 7 the remedies, and Section 8 the robust regression. Sections 9–10 set out the financial interpretation and the recommendation. Each section is produced by its own R Markdown file (`0_` to `8_`), and all tables and figures are generated in R.
+
+```{r report, child = sections}
+```

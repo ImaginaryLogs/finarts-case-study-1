@@ -1,0 +1,90 @@
+# Regression Diagnostics
+
+Diagnostics are run on both the initial model (M1) and the preferred specification (M2), so that the remedies in Section 7 tackle problems both models share.
+
+```{r diagnostics}
+diag_12 <- diag_tab(list(M1 = m1, M2 = m2))
+infl <- tibble(Date = df$Date, WTI = df$WTI,
+               `Std. residual` = rstudent(m2), Leverage = hatvalues(m2),
+               `Cook's D` = cooks.distance(m2))
+cook_cut <- 4 / nobs(m2)
+otest <- outlierTest(m2)
+```
+
+```{r diag-table}
+diag_12 %>%
+  tbl("Diagnostic tests (p-values unless stated; Durbin-Watson is the statistic)") %>%
+  footnote(general = "Breusch-Pagan and White: H0 homoskedasticity. Breusch-Godfrey: H0 no autocorrelation up to lag 12. Jarque-Bera: H0 normal errors. RESET: H0 correct functional form.",
+           threeparttable = TRUE)
+```
+
+## Multicollinearity
+
+```{r corr-heatmap, fig.cap = "Correlation matrix of the dependent and explanatory variables", fig.height = 3.8}
+cor(df[c(y_var, x_brief)]) %>%
+  as_tibble(rownames = "row") %>%
+  pivot_longer(-row, names_to = "col") %>%
+  mutate(across(c(row, col), ~ factor(.x, c(y_var, x_brief)))) %>%
+  ggplot(aes(col, fct_rev(row), fill = value)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = fmt(value)), size = 2.6) +
+  scale_fill_gradient2(low = "firebrick", mid = "white", high = "steelblue", limits = c(-1, 1)) +
+  labs(x = NULL, y = NULL, fill = "r") +
+  theme_minimal(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r vif}
+vif(m1) %>% enframe("Variable", "VIF") %>%
+  mutate(Variable = lab(Variable), `1/VIF` = 1 / VIF) %>%
+  tbl("Variance inflation factors, model M1", digits = 2)
+```
+
+The largest pairwise correlations are between the dollar and USD/PHP (`r fmt(cor(df$USD, df$USDPHP))`) and between the dollar and the S&P 500 (`r fmt(cor(df$USD, df$SP500))`). All VIFs are below `r ceiling(max(vif(m1)))`, far under the usual warning levels of 5–10. **Multicollinearity is not a concern.** The wide confidence intervals in Section 4 come from noisy oil returns, not from overlapping regressors.
+
+## Heteroskedasticity
+
+For M1, the Breusch-Pagan test ($p =$ `r fmt(diag_12[["Breusch-Pagan p"]][1], 3)`) and the White test ($p =$ `r fmt(diag_12[["White p"]][1], 3)`) do not reject homoskedasticity at 5%, though White comes close at 10%. For M2, the Breusch-Pagan test rejects ($p =$ `r fmt(diag_12[["Breusch-Pagan p"]][2], 3)`). The residual-versus-fitted plot below shows why: residual spread is far larger at the extreme fitted values of early 2020. **The evidence for heteroskedasticity is moderate and mostly tied to the crisis months.**
+
+## Autocorrelation
+
+These are time-series data, so serial correlation has to be checked. The Durbin-Watson statistics (`r fmt(diag_12[["Durbin-Watson"]][1])` and `r fmt(diag_12[["Durbin-Watson"]][2])`) are close to 2. The Breusch-Godfrey test up to 12 lags does not reject ($p$ = `r fmt(diag_12[["Breusch-Godfrey(12) p"]][1], 3)` and `r fmt(diag_12[["Breusch-Godfrey(12) p"]][2], 3)`). This is what efficient-market reasoning predicts for monthly returns, and **there is no meaningful autocorrelation.**
+
+## Outliers and influential observations
+
+```{r cooks-plot, fig.cap = "Cook's distance for model M2 (dashed line: 4/n)", fig.height = 2.8}
+ggplot(infl, aes(Date, `Cook's D`)) +
+  geom_col(width = 20, fill = "grey30") +
+  geom_hline(yintercept = cook_cut, linetype = "dashed", colour = "red") +
+  geom_text(data = slice_max(infl, `Cook's D`, n = 2),
+            aes(label = format(Date, "%b %Y")), vjust = -0.4, size = 3) +
+  labs(x = NULL) +
+  theme_minimal(base_size = 9)
+```
+
+```{r influence-table}
+infl %>% slice_max(`Cook's D`, n = 6) %>%
+  mutate(Date = format(Date, "%b %Y")) %>%
+  tbl("Most influential months, model M2")
+```
+
+Two months dominate. **March 2020** (Cook's D = `r fmt(max(infl[["Cook's D"]]))`) saw the collapse of the OPEC+ agreement on 6 March and the start of COVID-19 lockdowns at the same time, and WTI fell `r fmt(abs(df$WTI[excl][1]), 1)`%. **May 2020** brought a `r fmt(df$WTI[excl][2], 1)`% rebound after the April futures collapse, as record OPEC+ cuts took effect. A single observation with Cook's D above 1 can by itself move the estimated coefficients substantially. Both months are also extreme outliers: the Bonferroni-adjusted outlier test gives $p$ `r pv(min(otest$bonf.p))`. Neither is a data error. They are real, exceptional *supply-and-demand events* that the financial regressors cannot capture.
+
+## Residual diagnostics
+
+```{r resid-plots, fig.cap = "Residual diagnostics for model M2", fig.height = 5.5}
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1), cex = 0.7)
+plot(m2, which = c(1, 2, 3, 5), labels.id = format(df$Date, "%b%y"))
+```
+
+The Q-Q plot shows residuals that are normal in the middle but have two extreme tails, and the Jarque-Bera test rejects normality decisively. The RESET test also rejects correct functional form ($p$ `r pv(diag_12[["RESET p"]][2])` for M2). This most likely reflects the two crisis months bending the fit rather than a true non-linearity, and Section 7 tests that directly.
+
+## Summary of diagnostic findings
+
+| Issue | Evidence | Severity |
+|---|---|---|
+| Multicollinearity | VIF < 2.5, correlations < 0.6 | None |
+| Heteroskedasticity | BP / White borderline, driven by 2020 | Moderate |
+| Autocorrelation | DW about 1.8–1.9; BG(12) not significant | None |
+| Outliers / influence | Mar & May 2020: Cook's D > 1, Bonferroni outliers | **Severe** |
+| Normality / specification | Jarque-Bera and RESET reject | **Severe** (linked to the outliers) |

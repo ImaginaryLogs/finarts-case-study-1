@@ -1,0 +1,60 @@
+# Financial Interpretation
+
+```{r final-summary}
+es4 <- econ_sig(m4, nw(m4))
+eff <- function(v) es4$`Effect of +1 SD (pp)`[es4$Variable == lab(v)]
+```
+
+## Main empirical findings
+
+```{r findings-table}
+es4 %>%
+  mutate(Coefficient = b4[x_global], .after = Variable) %>%
+  select(Variable, Coefficient, `Effect of +1 SD (pp)`, `% of SD(WTI)`, `p-value (HAC)` = `p-value`) %>%
+  tbl("Final model (M4): coefficients and economic significance of global drivers", digits = 2)
+```
+
+1. **Oil returns move with global growth expectations.** In the final model, a one-SD rise in US 10-year yields (`r fmt(sd(df$d10Y) * 100, 0)` bp) goes with a `r fmt(eff("d10Y"), 1)` pp higher monthly WTI return, and a one-SD equity rally goes with `r fmt(eff("SP500"), 1)` pp. These are the two largest and most reliable associations, and they survive both the dummy and the robust specifications.
+2. **A stronger dollar goes with weaker oil.** Each 1% dollar appreciation is associated with about `r fmt(abs(b4["USD"]), 1)` pp lower WTI returns, which is consistent with oil being priced in dollars.
+3. **Once the 2020 extremes are controlled for, risk sentiment (VIX) adds no explanatory power and gold has a modest negative partial association.** The negative gold coefficient fits gold and oil competing for flows during stress: when investors move into gold for safety, risky commodities sell off.
+4. **Philippine conditions do not explain WTI.** Inflation, manufacturing and the peso are jointly insignificant in both the initial and the final model. The significant peso coefficient in M1 reflects causation in the other direction: oil price increases weaken the peso.
+5. **Tail events dominate oil risk.** March and May 2020 moved WTI by `r fmt(b4["D_Mar20"], 0)` and `r fmt(b4["D_May20"], 0)` pp beyond what financial conditions predicted. That is several times the effect of any regular driver.
+
+## Financial and economic meaning
+
+For a Philippine oil-consuming firm, such as a fuel distributor, an airline, a power generator or a transport company, **the risk in its oil costs is imported**. Monthly oil returns line up with US equities, US yields and the dollar, and not with anything happening in the Philippine economy. Two practical implications follow:
+
+* **Oil and the peso compound each other.** The Philippines imports its oil, so oil price increases tend to come with peso depreciation. The peso cost of fuel rises by *more* than the dollar price of oil. A peso-based fuel budget faces both risks at once.
+* **Oil shocks are a global risk factor.** The positive link with equities and yields means oil prices tend to rise when the world economy is strong. A firm whose own revenues are domestic gets no natural hedge from that global growth.
+
+The model explains about `r fmt(100 * summary(m2)$r.squared, 0)`% of monthly oil variation without the event dummies. The remaining variation comes from oil-specific supply news (OPEC+ decisions, inventories, geopolitics) that financial variables do not capture. Global indicators are useful for understanding the *direction* of oil risk, but **they cannot be relied on to forecast or fully hedge it**.
+
+## Limitations and remaining uncertainty
+
+* **Association, not causation.** All variables are measured in the same month, and oil, equities and yields affect one another. The coefficients describe co-movement and should not be read as causal effects.
+* **No forecasting ability is claimed.** Contemporaneous regressors are not known in advance. A forecasting model would need lagged regressors and an out-of-sample evaluation.
+* **Small sample and structural change.** 96 months cover several distinct regimes: pre-COVID, the pandemic, the 2022 energy shock and monetary tightening. The coefficients are averages across these regimes and may not hold in the next one.
+* **Event dummies are chosen after the fact.** The robust MM-estimator confirms them, but the next crisis will not come with a dummy, and tail risk remains large.
+* **Data substitutions.** Gold and USD/PHP use market proxies for the WGC and BSP series, and PSA's manufacturing growth series has severe base effects. None of these affects the main conclusions, since the Philippine block is insignificant on any construction and gold is a minor driver.
+
+# Recommendation and Conclusion
+
+**Recommendation.** A Philippine firm or treasury with significant oil exposure should:
+
+1. **Base oil-risk monitoring and hedging on global indicators, not domestic ones.** Track US 10-year yields, US equity performance and the broad dollar index as early warning of oil cost pressure. Philippine CPI and manufacturing data say nothing about where oil is going and should not drive hedging decisions.
+2. **Hedge oil and the peso together.** Because oil increases and peso weakness tend to coincide, layered WTI or Brent swaps or options should be paired with USD/PHP forward cover so that the *peso* cost of fuel is protected.
+3. **Use option-based protection and stress tests for tail risk.** The largest monthly moves (–78% and +62% in 2020) were not explained by financial conditions and were several times larger than any normal-month driver. Options or collars that cap losses during extreme moves are more suitable than relying on regression-based hedge ratios alone. Budgets should be stress-tested against moves of ±50% in a single month.
+
+**Conclusion.** Over January 2018 – December 2025, monthly WTI returns are significantly associated with **global** financial conditions: positively with equity returns and US yield changes, and negatively with the dollar. They have no reliable relationship with Philippine inflation, the peso or manufacturing growth. The initial model's results were distorted by two extreme 2020 months. Correcting for them with event dummies and HAC inference, and confirming the result with robust MM-estimation, gives a smaller but more reliable set of global sensitivities. The evidence supports a hedging policy for Philippine oil users that is driven by global markets, covers both oil and the peso, and protects against tail events.
+
+# References
+
+Akram, Q. F. (2009). Commodity prices, interest rates and the dollar. *Energy Economics*, 31(6), 838–851.
+
+Kilian, L. (2009). Not all oil price shocks are alike: Disentangling demand and supply shocks in the crude oil market. *American Economic Review*, 99(3), 1053–1069.
+
+Newey, W. K., & West, K. D. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. *Econometrica*, 55(3), 703–708.
+
+Yohai, V. J. (1987). High breakdown-point and high efficiency robust estimates for regression. *The Annals of Statistics*, 15(2), 642–656.
+
+**Data sources:** Federal Reserve Bank of St. Louis (FRED); Philippine Statistics Authority (OpenSTAT); Yahoo Finance.

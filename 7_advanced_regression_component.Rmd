@@ -1,0 +1,68 @@
+# Advanced Regression Component: Robust MM-Estimation
+
+```{r robust}
+m_rob <- rlm(reg_formula(x_global), data = df, method = "MM", maxit = 100)
+ct_rob <- summary(m_rob)$coefficients
+ct_rob <- cbind(ct_rob, `Pr(>|t|)` = 2 * pnorm(-abs(ct_rob[, 3])))  # asymptotic normal p-values
+weights <- tibble(Date = df$Date, WTI = df$WTI, Weight = m_rob$w)
+low_w   <- weights %>% filter(Weight < 0.5) %>% arrange(Weight)
+other_w <- low_w %>% filter(!Date %in% df$Date[excl])
+b_rob   <- coef(m_rob)
+```
+
+## Why robust regression?
+
+Robust regression is chosen because the diagnostics call for it. Monthly oil returns are fat-tailed, and Section 6 showed that a couple of extreme months can control OLS estimates. The dummy remedy in Section 7 works, but it depends on the analyst picking which months to neutralise *after* seeing the residuals, which risks data snooping. A firm using this model for risk management also needs to know whether the global sensitivities hold up without hand-picked adjustments.
+
+The **MM-estimator** (Yohai, 1987) addresses this directly:
+
+* It replaces OLS's squared-error loss with a bounded loss (Tukey's bisquare). Each observation's influence is therefore capped, and observations with very large residuals receive zero weight.
+* It starts from a high-breakdown S-estimate, so up to 50% of the data could be contaminated without the estimates breaking down. It is then tuned to be 95% as efficient as OLS when errors really are normal.
+* It **chooses the weights from the data**, so no dates need to be specified.
+
+The method is applied to the M2 regressors with **no event dummies**, to see whether it reaches the same answer as M4 on its own. Other advanced methods were considered and not used:
+
+* Logistic regression and panel methods do not fit a single continuous time series.
+* Regularisation is not needed with five regressors and no multicollinearity.
+* An interaction or regime model (for example, high- versus low-VIX months) would split an already small sample of 96 months.
+
+## Results
+
+```{r robust-table}
+side_by_side(list(`M2 OLS (no dummies)`  = coeftest(m2),
+                  `M4 OLS + dummies (HAC)` = coeftest(m4, vcov. = nw(m4)),
+                  `MM robust (no dummies)` = ct_rob)) %>%
+  tbl("Robust MM-estimates compared with OLS: estimate (standard error); * p<0.10, ** p<0.05, *** p<0.01")
+```
+
+```{r robust-weights, fig.cap = "Final MM-estimation weight of each month (1 = full weight, 0 = ignored)", fig.height = 2.8}
+ggplot(weights, aes(Date, Weight)) +
+  geom_col(width = 20, fill = "steelblue4") +
+  annotate("label", x = as.Date("2020-04-01"), y = 0.45, label = "Mar & May 2020: weight 0",
+           colour = "red", size = 3) +
+  scale_y_continuous(limits = c(0, 1.1)) +
+  labs(x = NULL) +
+  theme_minimal(base_size = 9)
+```
+
+```{r low-weights}
+low_w %>% mutate(Date = format(Date, "%b %Y")) %>%
+  tbl("Months down-weighted below 0.5 by the MM-estimator", digits = 3)
+```
+
+## Interpretation
+
+The robust estimator independently picks out **exactly the same two months**. March 2020 and May 2020 receive weights of `r fmt(weights$Weight[excl][1], 3)` and `r fmt(weights$Weight[excl][2], 3)`, so they are effectively excluded. Apart from these two, only `r nrow(other_w)` month(s) receive a weight below 0.5 (`r paste(format(other_w$Date, "%B %Y"), collapse = ", ")`), and none is excluded. The robust coefficients are close to those of the dummy model M4:
+
+* S&P 500: `r fmt(b_rob["SP500"])` (robust) vs `r fmt(b4["SP500"])` (M4)
+* USD index: `r fmt(b_rob["USD"])` vs `r fmt(b4["USD"])`
+* Gold: `r fmt(b_rob["Gold"])` vs `r fmt(b4["Gold"])`
+* US 10Y yield: `r fmt(b_rob["d10Y"], 1)` vs `r fmt(b4["d10Y"], 1)`
+* VIX: `r fmt(b_rob["VIX"])` vs `r fmt(b4["VIX"])`, insignificant in both
+
+This has two consequences for the analysis:
+
+1. **The final model is not an artefact of hand-picked dummies.** A method that knows nothing about COVID-19 or OPEC+ reaches the same conclusion, which greatly strengthens confidence in M4.
+2. **The ranking of drivers is robust.** In both approaches the S&P 500 and the 10-year yield are the strongest and most reliable associations, the dollar is negative and borderline-to-significant, and VIX adds nothing once extreme months are neutralised.
+
+M4 is kept as the reported final model because its coefficients and HAC tests are easier to communicate. The MM-estimator serves as its robustness check. One caveat applies: MM standard errors are asymptotic, so with 96 observations the robust p-values should be read as approximate.

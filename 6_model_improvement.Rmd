@@ -1,0 +1,68 @@
+# Model Improvement
+
+```{r improve}
+df <- df %>% mutate(D_Mar20 = as.integer(Date == "2020-03-01"),
+                    D_May20 = as.integer(Date == "2020-05-01"))
+x_final <- c(x_global, "D_Mar20", "D_May20")
+m4 <- lm(reg_formula(x_final), data = df)
+ct4 <- coef_tab(m4, nw(m4))
+b4  <- coef(m4)
+p4  <- set_names(ct4$`p-value`, names(b4))
+
+# Re-check whether the Philippine block matters once the 2020 shocks are controlled for
+m4_ph   <- update(m4, . ~ . + PH_CPI + USDPHP + PH_Mfg)
+ph_wald <- waldtest(m4, m4_ph, vcov = nw, test = "F")
+diag_all <- diag_tab(list(`M1 (initial)` = m1, `M2 (global)` = m2, `M4 (improved)` = m4))
+```
+
+## Problems identified
+
+The diagnostics point to one dominant problem and one secondary concern:
+
+1. **Two extreme, influential months (March and May 2020).** These months alone cause the non-normal residuals and the failed RESET test, and they can distort every slope coefficient. This is the most important problem.
+2. **Moderate heteroskedasticity**, concentrated in the same period. With a time-series sample, some residual serial correlation is also possible even though the tests do not detect it.
+
+Multicollinearity and autocorrelation need no remedy. The Philippine block has already been removed through the nested F-test in Section 5.
+
+## Remedies applied and why
+
+**(a) Event (pulse) dummies for March 2020 and May 2020.** Each dummy equals 1 in its month and 0 otherwise. This is a standard *intervention* specification for known, dated, exogenous shocks. The OPEC+ price war, the lockdown demand collapse and the post-April rebound were physical oil-market events that equity, dollar, volatility, gold and yield movements cannot represent. Dummies are better than deleting the months, because they keep the sample intact and make the size of each shock explicit as its own coefficient. They are also better than one combined "COVID" dummy: the crash and the rebound have opposite signs, so a single dummy would average them to nothing. Separate dummies are not added for every large residual, because only these two months are statistical outliers (Bonferroni test) with a documented, oil-specific cause.
+
+**(b) Newey-West (HAC) standard errors** with three lags, the usual $T^{1/4}$ rule for $T = 96$. These protect the t-tests and confidence intervals against any remaining heteroskedasticity and low-order autocorrelation of unknown form. They leave the coefficient estimates unchanged. Weighted least squares is not used, because it would require a model of how the error variance behaves, and the diagnostics only suggest that the variance is high during crises. A log or other transformation of the dependent variable is also unnecessary, since WTI is already a log return.
+
+The improved model is
+
+$$
+\text{WTI}_t = \beta_0 + \beta_1\text{SP500}_t + \beta_2\text{USD}_t + \beta_3\text{VIX}_t + \beta_4\text{Gold}_t + \beta_5\Delta\text{10Y}_t + \delta_1 D^{Mar20}_t + \delta_2 D^{May20}_t + u_t
+$$
+
+```{r m4-table}
+tbl(ct4, "Improved model (M4): OLS estimates with Newey-West HAC standard errors")
+```
+
+## Comparison with the initial model
+
+```{r compare-table}
+cols <- c("M1 initial (OLS SE)", "M2 global (OLS SE)", "M4 improved (HAC SE)")
+fit_rows <- fit_tab(set_names(list(m1, m2, m4), cols)) %>%
+  transmute(Model, `Adj. R2` = fmt(`Adj. R2`, 3), BIC = fmt(BIC, 1)) %>%
+  pivot_longer(-Model, names_to = "Term") %>%
+  pivot_wider(names_from = Model)
+side_by_side(set_names(list(coeftest(m1), coeftest(m2), coeftest(m4, vcov. = nw(m4))), cols)) %>%
+  bind_rows(fit_rows) %>%
+  tbl("Coefficient comparison: estimate (standard error); * p<0.10, ** p<0.05, *** p<0.01")
+```
+
+```{r diag-compare}
+diag_all %>% tbl("Diagnostics before and after improvement")
+```
+
+The changes are large and lead to useful conclusions:
+
+* **The specification problems are resolved.** In M4 the RESET test no longer rejects ($p =$ `r fmt(diag_all[["RESET p"]][3], 3)`), residuals are consistent with normality (Jarque-Bera $p =$ `r fmt(diag_all[["Jarque-Bera p"]][3], 3)`), and neither heteroskedasticity test rejects (BP $p =$ `r fmt(diag_all[["Breusch-Pagan p"]][3], 3)`, White $p =$ `r fmt(diag_all[["White p"]][3], 3)`). The earlier failures came from two months, not from a misspecified functional form.
+* **Magnitudes fall towards more realistic values.** The S&P 500 coefficient falls from `r fmt(b1["SP500"])` to `r fmt(b4["SP500"])`, the dollar from `r fmt(b1["USD"])` to `r fmt(b4["USD"])` and the yield from `r fmt(b1["d10Y"], 1)` to `r fmt(b4["d10Y"], 1)`. The 2020 extremes had inflated every global coefficient, because markets fell together in March 2020 and recovered together afterwards.
+* **Significance changes.** The S&P 500 and the 10-year yield remain significant under HAC inference. The dollar ($p$ `r pv(p4["USD"])`) and gold ($p$ `r pv(p4["Gold"])`) are now significant at 5%. **VIX loses significance** ($p$ `r pv(p4["VIX"])`): its apparent effect in M1 depended on the crisis months.
+* **The Philippine variables still add nothing.** When they are added back to M4, the HAC Wald test gives $F =$ `r fmt(ph_wald$F[2])`, $p$ `r pv(ph_wald$"Pr(>F)"[2])`.
+* **Interpret the jump in $\bar R^2$ (to `r fmt(summary(m4)$adj.r.squared, 3)`) with care.** Much of it is mechanical, because the two dummies fit their own months exactly. M4 should be judged on the improved diagnostics and the more stable coefficients, not on $R^2$.
+
+**M4 is the selected final model.** One concern remains: the dummies were chosen after looking at the data. Section 8 therefore checks the result with a method that does not require choosing which months to treat specially.

@@ -1,0 +1,73 @@
+# Statistical Inference
+
+## Individual t-tests
+
+For each regressor the test is $H_0: \beta_j = 0$ against $H_1: \beta_j \neq 0$, using $t = \hat\beta_j / \text{se}(\hat\beta_j)$ with `r df.residual(m1)` degrees of freedom. Two-sided tests are used even where theory suggests a sign, so that the analysis does not assume the answer. A one-sided test for the dollar ($H_1: \beta_{USD} < 0$) is reported as well, because the dollar-pricing argument makes a clear directional prediction.
+
+```{r t-tests}
+ct1 %>%
+  filter(Term != "Intercept") %>%
+  transmute(Variable = Term, `t value`, `p-value (two-sided)` = `p-value`,
+            `Decision at 5%` = ifelse(`p-value` < 0.05, "Reject H0", "Do not reject H0")) %>%
+  tbl("t-tests of $H_0: \\beta_j = 0$, model M1")
+
+ci_txt <- function(v, ct = ct1) with(filter(ct, Term == lab(v)),
+  paste(fmt(`95% CI low`), "to", fmt(`95% CI high`)))
+p_usd_one <- pt(ct1$`t value`[ct1$Term == lab("USD")], df.residual(m1))
+```
+
+Using two-sided tests at the 5% level, H0 is rejected for the S&P 500, the dollar, VIX, the 10-year yield and USD/PHP. It is not rejected for gold, PH inflation or PH manufacturing. The one-sided test for the dollar gives $p =$ `r fmt(p_usd_one, 4)`, which strongly supports the expected negative effect.
+
+## Confidence intervals
+
+```{r ci-plot, fig.cap = "95% confidence intervals for the M1 slope coefficients", fig.height = 3}
+ct1 %>%
+  filter(Term != "Intercept") %>%
+  mutate(Term = fct_rev(factor(Term, Term))) %>%
+  ggplot(aes(Estimate, Term)) +
+  geom_vline(xintercept = 0, colour = "grey60") +
+  geom_errorbar(aes(xmin = `95% CI low`, xmax = `95% CI high`), width = 0.2) +
+  geom_point() +
+  facet_wrap(~ Term %in% lab("d10Y"), scales = "free", ncol = 2,
+             labeller = as_labeller(c(`FALSE` = "Return and level regressors",
+                                      `TRUE` = "Yield change (per 1 pp)"))) +
+  labs(x = "Estimate (pp of WTI return)", y = NULL) +
+  theme_minimal(base_size = 9)
+```
+
+The confidence intervals in the M1 coefficient table and in Figure 4 show how uncertain the estimates are. The S&P 500 interval runs from `r ci_txt("SP500")`, so the data are consistent with oil moving anywhere from a quarter to almost one-and-a-half times as much as equities. The dollar interval (`r ci_txt("USD")`) is wide but lies entirely below zero. The VIX interval only just excludes zero. The intervals for PH inflation and PH manufacturing comfortably include zero, and the USD/PHP interval only just excludes it. With only 96 observations and very volatile oil returns, the data establish the *direction* of the global effects more firmly than their size.
+
+## Statistical versus economic significance
+
+Statistical significance shows that an association is unlikely to be zero. It does not show that the association is large enough to matter. Coefficients are measured in different units, so the table below converts each one into the effect of a **one-standard-deviation** move in the regressor, expressed in pp of WTI return and as a share of the standard deviation of WTI returns (`r fmt(sd(df$WTI))` pp).
+
+```{r econ-sig}
+econ_sig <- function(m, V = vcov(m)) {
+  x  <- setdiff(names(coef(m)), c("(Intercept)", "D_Mar20", "D_May20"))
+  sx <- map_dbl(x, ~ sd(df[[.x]]))
+  p  <- coeftest(m, vcov. = V)[x, 4]
+  tibble(Variable = lab(x), `SD of X` = sx, `Effect of +1 SD (pp)` = coef(m)[x] * sx,
+         `% of SD(WTI)` = 100 * coef(m)[x] * sx / sd(df$WTI), `p-value` = p)
+}
+es1 <- econ_sig(m1)
+tbl(es1, "Economic significance: effect of a one-standard-deviation move, model M1", digits = 2)
+```
+
+The largest effects come from the dollar, the 10-year yield and the S&P 500. A one-SD move in any of them changes the monthly oil return by roughly 4–5 pp, about a third of oil's own monthly SD. The VIX effect is about half as large. Effects of this size matter for any firm with oil exposure: on a \$10 million monthly fuel bill, 4 pp is about \$0.4 million. USD/PHP is statistically significant but economically modest, at about `r fmt(es1[[3]][es1$Variable == lab("USDPHP")], 1)` pp per SD, and as argued above it most likely reflects oil's effect on the peso. Philippine manufacturing growth has an enormous SD because of the 2020–21 base effects, yet its effect is essentially zero. **It is both statistically and economically insignificant.**
+
+## Joint hypothesis tests
+
+```{r joint-tests}
+jt <- function(vars, label) {
+  h <- linearHypothesis(m1, paste(vars, "= 0"))
+  tibble(Hypothesis = label, `Restrictions` = h$Df[2], F = h$F[2], `p-value` = h$`Pr(>F)`[2])
+}
+joint <- bind_rows(
+  jt(x_ph,     "Philippine block: PH_CPI = USDPHP = PH_Mfg = 0"),
+  jt(x_global, "Global block: SP500 = USD = VIX = Gold = d10Y = 0"),
+  jt(c("PH_CPI", "PH_Mfg"), "PH macro only: PH_CPI = PH_Mfg = 0"))
+jp <- set_names(joint[["p-value"]], c("ph", "global", "phmacro"))
+tbl(joint, "Joint F-tests on model M1")
+```
+
+The most useful financial question for a Philippine decision-maker is whether **domestic conditions add information about oil once global conditions are known**. The joint test of the Philippine block gives $F =$ `r fmt(joint$F[1])` ($p$ `r pv(jp["ph"])`). This is not significant: as a group, Philippine inflation, the peso and manufacturing add nothing reliable. Dropping the peso, which is significant on its own, leaves domestic inflation and manufacturing with $p$ `r pv(jp["phmacro"])`. By contrast, the global block is overwhelmingly significant ($p$ `r pv(jp["global"])`). In financial terms, the variation in oil returns that a Philippine firm faces comes from global markets, not from the domestic economy.

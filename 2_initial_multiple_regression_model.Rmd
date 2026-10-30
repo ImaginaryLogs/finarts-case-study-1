@@ -1,0 +1,61 @@
+# Initial Multiple Regression Model
+
+```{r m1}
+reg_formula <- function(x) reformulate(x, response = y_var)
+m1  <- lm(reg_formula(x_brief), data = df)
+s1  <- summary(m1)
+b1  <- coef(m1)
+p1  <- s1$coefficients[, 4]
+ct1 <- coef_tab(m1)
+```
+
+## Specification
+
+The baseline model includes all eight candidate regressors from the brief. Each one has a clear theoretical link to oil prices: demand and growth expectations (S&P 500, US yields), the dollar pricing of oil (USD index), risk sentiment (VIX), safe-haven and inflation-hedge flows (gold), and the Philippine block:
+
+$$
+\begin{aligned}
+\text{WTI}_t = \beta_0 &+ \beta_1\,\text{SP500}_t + \beta_2\,\text{USD}_t + \beta_3\,\text{VIX}_t + \beta_4\,\text{Gold}_t + \beta_5\,\Delta\text{10Y}_t \\
+&+ \beta_6\,\text{PH\_CPI}_t + \beta_7\,\text{USDPHP}_t + \beta_8\,\text{PH\_Mfg}_t + u_t
+\end{aligned}
+$$
+
+The model is estimated by ordinary least squares (OLS) on `r nobs(m1)` monthly observations. All regressors are measured in the same month as the WTI return. The model therefore describes **contemporaneous associations**: how oil moves together with financial and economic conditions in the same month. It is not a forecasting model and does not identify causal effects.
+
+## Estimation results
+
+```{r m1-table}
+tbl(ct1, "Initial model (M1): OLS estimates with classical standard errors")
+```
+
+```{r m1-fit}
+fit_tab(list(M1 = m1)) %>%
+  tbl("Initial model (M1): goodness of fit and overall F-test")
+```
+
+The model explains `r fmt(100 * s1$r.squared, 1)`% of the monthly variation in WTI returns ($\bar R^2 =$ `r fmt(s1$adj.r.squared, 3)`). The overall F-test of $H_0: \beta_1 = \dots = \beta_8 = 0$ gives $F(`r s1$fstatistic[2]`, `r s1$fstatistic[3]`) =$ `r fmt(s1$fstatistic[1])` with $p$ `r pv(pf(s1$fstatistic[1], s1$fstatistic[2], s1$fstatistic[3], lower.tail = FALSE))`. The regressors are therefore jointly associated with oil returns. A residual standard error of `r fmt(s1$sigma)` percentage points shows that much of the monthly movement in oil is left unexplained.
+
+## Coefficient interpretation (ceteris paribus)
+
+Each coefficient gives the expected change in the monthly WTI log return, in percentage points, for a one-unit change in that regressor, *holding all other regressors constant*:
+
+* **S&P 500 (`r fmt(b1["SP500"], 3)`, p `r pv(p1["SP500"])`).** A 1% higher equity return goes with a `r fmt(b1["SP500"])` pp higher oil return. Rising equities signal stronger expected global demand.
+* **USD index (`r fmt(b1["USD"], 3)`, p `r pv(p1["USD"])`).** A 1% appreciation of the broad dollar goes with oil returns `r fmt(abs(b1["USD"]))` pp lower. Oil is invoiced in dollars, so a stronger dollar makes it more expensive for non-US buyers and lowers demand.
+* **VIX (`r fmt(b1["VIX"], 3)`, p `r pv(p1["VIX"])`).** Each extra point of average implied volatility goes with a `r fmt(abs(b1["VIX"]))` pp lower oil return. This is consistent with risk-off episodes lowering demand for risky commodities.
+* **Gold (`r fmt(b1["Gold"], 3)`, p `r pv(p1["Gold"])`).** The partial association with gold is negative but not significant once the dollar and risk are controlled for.
+* **US 10Y yield (`r fmt(b1["d10Y"], 3)`, p `r pv(p1["d10Y"])`).** A 10 basis-point rise in the 10-year yield goes with oil returns `r fmt(b1["d10Y"] / 10)` pp higher. Rising yields reflect stronger growth and inflation expectations, which are also positive for oil demand.
+* **PH CPI (`r fmt(b1["PH_CPI"], 3)`, p `r pv(p1["PH_CPI"])`) and PH manufacturing (`r fmt(b1["PH_Mfg"], 4)`, p `r pv(p1["PH_Mfg"])`).** Neither is statistically different from zero.
+* **USD/PHP (`r fmt(b1["USDPHP"], 3)`, p `r pv(p1["USDPHP"])`).** Peso depreciation goes with higher oil returns. The economic direction is almost certainly *from oil to the peso*: the Philippines imports its oil, so higher prices widen the trade deficit and weaken the peso.
+
+## Economic plausibility
+
+```{r plausibility}
+expected <- c(SP500 = "+", USD = "-", VIX = "-", Gold = "+/-", d10Y = "+",
+              PH_CPI = "+/0", USDPHP = "+/0", PH_Mfg = "+/0")
+tibble(Variable = lab(names(expected)), Expected = expected,
+       Estimated = ifelse(b1[names(expected)] > 0, "+", "-"),
+       `Significant at 5%` = ifelse(p1[names(expected)] < 0.05, "Yes", "No")) %>%
+  tbl("Expected versus estimated signs, model M1")
+```
+
+The signs of the global variables match theory. The magnitudes are also reasonable. Oil is roughly three times as volatile as the S&P 500, so an equity beta below one is plausible. The yield coefficient looks large but works out to about `r fmt(b1["d10Y"] / 10)` pp per 10 bp. The Philippine variables have no clear relationship with WTI, which fits the Philippines being a price-taker. The significant USD/PHP coefficient is better read as oil moving the peso than the reverse. Two cautions apply before relying on these numbers. First, the descriptive analysis showed two extreme months that may dominate OLS. Second, classical standard errors assume homoskedastic, serially uncorrelated errors. Both points are examined below.

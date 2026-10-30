@@ -1,0 +1,32 @@
+# Model Evaluation and Comparison
+
+```{r compare}
+m2 <- lm(reg_formula(x_global), data = df)
+m3 <- lm(reg_formula(c("SP500", "USD", "dVIX", "Gold", "d10Y")), data = df)
+models_eval <- list(`M1: brief (8 regressors)` = m1,
+                    `M2: global block`         = m2,
+                    `M3: global, change in VIX` = m3)
+fit_eval <- fit_tab(models_eval)
+nested   <- anova(m2, m1)
+
+# Does M3's better fit survive without the two extreme 2020 months?
+excl   <- df$Date %in% as.Date(c("2020-03-01", "2020-05-01"))
+m3_ex  <- update(m3, data = df[!excl, ])
+m2_ex  <- update(m2, data = df[!excl, ])
+```
+
+Three theory-motivated specifications are compared:
+
+* **M1:** all eight regressors in the brief.
+* **M2:** global block only, dropping the Philippine variables. This tests the price-taker hypothesis from Section 4.
+* **M3:** M2 with the VIX *level* replaced by its monthly *change*. The dependent variable is a monthly change, so a change in risk perception is arguably the better-matched regressor.
+
+```{r fit-table}
+tbl(fit_eval, "Fit comparison of candidate specifications")
+```
+
+**Nested test (M2 vs M1).** The partial F-test of the restriction that removes the Philippine block gives $F =$ `r fmt(nested$F[2])` with $p$ `r pv(nested$"Pr(>F)"[2])`. The three Philippine variables can be dropped without a significant loss of fit. The information criteria agree: BIC falls from `r fmt(fit_eval$BIC[1], 1)` to `r fmt(fit_eval$BIC[2], 1)` and AIC from `r fmt(fit_eval$AIC[1], 1)` to `r fmt(fit_eval$AIC[2], 1)`. M1 has the higher $R^2$, but only because adding regressors can never lower $R^2$. After adjusting for degrees of freedom the gain is only `r fmt(fit_eval[["Adj. R2"]][1] - fit_eval[["Adj. R2"]][2], 3)`.
+
+**Non-nested comparison (M3 vs M2).** M3 looks clearly better ($\bar R^2$ of `r fmt(fit_eval[["Adj. R2"]][3], 3)` against `r fmt(fit_eval[["Adj. R2"]][2], 3)`, and AIC lower by `r fmt(fit_eval$AIC[2] - fit_eval$AIC[3], 1)`). Selecting on fit alone would be a mistake, though. When M2 and M3 are re-estimated without March and May 2020, the change-in-VIX coefficient drops from `r fmt(coef(m3)["dVIX"])` to `r fmt(coef(m3_ex)["dVIX"])` ($p$ `r pv(summary(m3_ex)$coefficients["dVIX", 4])`). The two models then fit almost identically ($\bar R^2$ of `r fmt(summary(m2_ex)$adj.r.squared, 3)` for M2 and `r fmt(summary(m3_ex)$adj.r.squared, 3)` for M3). M3's apparent advantage comes from **one month**: March 2020, when the VIX jumped 38 points as oil crashed. That is a coincidence of crises, not a stable relationship. M3 also weakens the equity coefficient, because the change in VIX and S&P 500 returns are strongly correlated (–0.61).
+
+**Preferred specification at this stage: M2.** It improves on M1 in both AIC and BIC, follows directly from the joint test of the price-taker hypothesis, and keeps the VIX measure the brief specifies. Unlike M3, its fit does not rest on a single crisis observation. The diagnostics in the next section test whether M2 is adequate. They also show that M1 and M2 share a deeper problem: both are heavily influenced by the 2020 extremes.
