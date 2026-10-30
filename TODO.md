@@ -7,12 +7,14 @@ Status key: `[x]` done · `[ ]` open · `[~]` done in the draft, but the group s
 ## 1. Open TODO items
 
 - [ ] **Rewrite the report prose to make narration straightforward yet engaging.** Keep the inline `` `r ...` `` values so the numbers stay linked to the results.
-- [ ] **Add group member names** to the `author:` field in `main.Rmd` (currently `[names]`).
+- [x] **Add group member names** to the `author:` field in `main.Rmd` (currently `[names]`).
 - [ ] **Record the group video** (8–12 min). It should cover the key findings, the diagnostics and remedies, the final model (M4), the recommendation, and why the methods were chosen. Every member should speak.
 - [ ] **Confirm the decision-maker framing** with the instructor. The draft assumes a Philippine fuel-buying firm or treasury.
 - [ ] **Confirm the data substitutions** with the instructor. The draft uses COMEX gold futures (Yahoo `GC=F`) instead of World Gold Council data, and Yahoo `PHP=X` instead of BSP rates.
-- [ ] **Decide what to do with `finarts-case- study- suggested-code.R`.** It is not used by the report, so delete it or move it to an `archive/` folder.
-- [ ] **Commit the work to git** (nothing is committed yet).
+- [x] **Decide what to do with `finarts-case- study- suggested-code.R`.** It is not used by the report, so delete it or move it to an `archive/` folder.
+  - Originally tests, just renamed to archives
+- [~] **Commit the work to git** (nothing is committed yet).
+  - Commited by me again
 - [ ] *(Optional)* Put pandoc on the PATH, or knit from RStudio. Outside RStudio, run `export RSTUDIO_PANDOC=/usr/lib/rstudio/resources/app/bin/quarto/bin/tools/x86_64` first.
 - [ ] *(Optional)* Add more references for the theoretical baseline (currently Kilian 2009 and Akram 2009).
 
